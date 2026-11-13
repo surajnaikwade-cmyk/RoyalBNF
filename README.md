@@ -141,6 +141,28 @@ npm run build
 - Food orders are validated against customer bookings and hotel ownership.
 - Database credentials and JWT secrets are supplied through environment variables.
 
+
+## Screenshots
+
+### Homepage
+![Homepage](screenshots/homepage.png)
+
+### Hotel Details and Room Listing
+![Hotel Details](screenshots/Hotel%20details%20and%20room%20listing.png)
+
+### Food Menu
+![Food Menu](screenshots/Food%20menu.png)
+
+### My Bookings
+![My Bookings](screenshots/My%20Bookings.png)
+
+### My Food Orders
+![My Food Orders](screenshots/My%20Food%20Orders.png)
+
+### Hotel Owner Dashboard
+![Hotel Owner Dashboard](screenshots/Hotel%20Owner%20Dashboard.png)
+
+
 ## Future Enhancements
 
 - Online payment integration
