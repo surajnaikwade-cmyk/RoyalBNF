@@ -67,7 +67,7 @@ RoyalBNF/
 
 ## Setup Instructions
 
-### 1. Clone the repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/surajnaikwade-cmyk/RoyalBNF.git
@@ -82,9 +82,9 @@ Create the database:
 CREATE DATABASE royal_bnf;
 ```
 
-Configure the database credentials and JWT secret as environment variables.
+Configure database credentials and JWT secret as environment variables.
 
-PowerShell:
+**PowerShell:**
 
 ```powershell
 $env:DB_USERNAME = "root"
@@ -94,7 +94,7 @@ $env:JWT_SECRET = "your_base64_encoded_secret"
 
 Use your own secure values. Never commit actual credentials or secrets.
 
-### 3. Start the backend
+### 3. Start the Backend
 
 Open a terminal in the `backend` directory:
 
@@ -102,11 +102,9 @@ Open a terminal in the `backend` directory:
 .\mvnw.cmd spring-boot:run
 ```
 
-Backend URL:
+Backend URL: http://localhost:8080
 
-`http://localhost:8080`
-
-### 4. Start the frontend
+### 4. Start the Frontend
 
 Open another terminal in the `frontend` directory:
 
@@ -115,19 +113,17 @@ npm install
 npm run dev
 ```
 
-Frontend URL:
-
-`http://localhost:5173`
+Frontend URL: http://localhost:5173
 
 ## Testing
 
-Backend tests:
+**Backend tests:**
 
 ```powershell
 .\mvnw.cmd clean test
 ```
 
-Frontend production build:
+**Frontend production build:**
 
 ```bash
 npm run build
@@ -135,33 +131,37 @@ npm run build
 
 ## Security
 
-- Passwords are encrypted using BCrypt.
+- Passwords are hashed using BCrypt.
 - JWT-based authentication protects secured endpoints.
 - Hotel owner endpoints require the hotel owner role.
 - Food orders are validated against customer bookings and hotel ownership.
 - Database credentials and JWT secrets are supplied through environment variables.
 
-
 ## Screenshots
 
 ### Homepage
+
 ![Homepage](screenshots/homepage.png)
 
 ### Hotel Details and Room Listing
+
 ![Hotel Details](screenshots/Hotel%20details%20and%20room%20listing.png)
 
 ### Food Menu
+
 ![Food Menu](screenshots/Food%20menu.png)
 
 ### My Bookings
+
 ![My Bookings](screenshots/My%20Bookings.png)
 
 ### My Food Orders
+
 ![My Food Orders](screenshots/My%20Food%20Orders.png)
 
 ### Hotel Owner Dashboard
-![Hotel Owner Dashboard](screenshots/Hotel%20Owner%20Dashboard.png)
 
+![Hotel Owner Dashboard](screenshots/Hotel%20Owner%20Dashboard.png)
 
 ## Future Enhancements
 
@@ -177,5 +177,6 @@ Core customer booking, hotel food ordering, customer order history and hotel own
 
 ---
 
-**Royal BNF – Royal Bed and Food**  
+**Royal BNF – Royal Bed and Food**
+
 *Your Stay. Your Taste. Your Experience.*
