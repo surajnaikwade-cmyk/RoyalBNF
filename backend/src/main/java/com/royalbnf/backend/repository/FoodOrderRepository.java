@@ -2,33 +2,46 @@
 package com.royalbnf.backend.repository;
 
 import com.royalbnf.backend.entity.FoodOrder;
+import com.royalbnf.backend.entity.FoodOrderStatus;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import com.royalbnf.backend.entity.FoodOrderStatus;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Repository
 public interface FoodOrderRepository
         extends JpaRepository<FoodOrder, Long> {
 
-    // Existing customer queries
+    // Customer: retrieve their orders
+    @Query("""
+            SELECT DISTINCT fo
+            FROM FoodOrder fo
+            JOIN FETCH fo.booking b
+            JOIN FETCH b.room r
+            JOIN FETCH r.hotel
+            LEFT JOIN FETCH fo.items items
+            LEFT JOIN FETCH items.hotelFoodMenu
+            WHERE b.customer.id = :customerId
+            ORDER BY fo.createdAt DESC
+            """)
     List<FoodOrder> findByBooking_Customer_IdOrderByCreatedAtDesc(
-            Long customerId
+            @Param("customerId") Long customerId
     );
 
+    // Retrieve orders associated with a booking
     List<FoodOrder> findByBooking_IdOrderByCreatedAtDesc(
             Long bookingId
     );
 
-
     // Dashboard: total orders for a hotel
-    long countByHotelFoodMenu_Hotel_Id(Long hotelId);
+    long countByHotel_Id(Long hotelId);
 
     // Dashboard: count orders by status
-    long countByHotelFoodMenu_Hotel_IdAndStatus(
+    long countByHotel_IdAndStatus(
             Long hotelId,
             FoodOrderStatus status
     );
@@ -37,24 +50,25 @@ public interface FoodOrderRepository
     @Query("""
             SELECT COALESCE(SUM(fo.totalPrice), 0)
             FROM FoodOrder fo
-            WHERE fo.hotelFoodMenu.hotel.id = :hotelId
+            WHERE fo.hotel.id = :hotelId
             AND fo.status = :status
             """)
-    java.math.BigDecimal calculateRevenueByHotelAndStatus(
+    BigDecimal calculateRevenueByHotelAndStatus(
             @Param("hotelId") Long hotelId,
             @Param("status") FoodOrderStatus status
     );
 
-
-    // Find all food orders belonging to a particular hotel
+    // Hotel owner: retrieve all orders with their items
     @Query("""
-            SELECT fo
+            SELECT DISTINCT fo
             FROM FoodOrder fo
             JOIN FETCH fo.booking b
-            JOIN FETCH fo.hotelFoodMenu hfm
-            JOIN FETCH hfm.hotel h
-            JOIN FETCH hfm.foodItem fi
-            WHERE h.id = :hotelId
+            JOIN FETCH b.room r
+            JOIN FETCH r.hotel
+            LEFT JOIN FETCH fo.items items
+            LEFT JOIN FETCH items.hotelFoodMenu menu
+            LEFT JOIN FETCH menu.foodItem
+            WHERE fo.hotel.id = :hotelId
             ORDER BY fo.createdAt DESC
             """)
     List<FoodOrder> findByHotelIdOrderByCreatedAtDesc(

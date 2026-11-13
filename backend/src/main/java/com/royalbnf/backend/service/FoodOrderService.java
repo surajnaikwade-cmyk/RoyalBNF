@@ -3,6 +3,7 @@ package com.royalbnf.backend.service;
 
 import com.royalbnf.backend.dto.FoodOrderRequest;
 import com.royalbnf.backend.dto.FoodOrderResponse;
+import com.royalbnf.backend.dto.FoodOrderStatusRequest;
 import com.royalbnf.backend.entity.*;
 import com.royalbnf.backend.exception.ResourceNotFoundException;
 import com.royalbnf.backend.repository.BookingRepository;
@@ -16,7 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import com.royalbnf.backend.dto.FoodOrderStatusRequest;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class FoodOrderService {
@@ -45,6 +49,7 @@ public class FoodOrderService {
 
         Customer customer = getAuthenticatedCustomer(authentication);
 
+        // Find and validate the booking
         Booking booking = bookingRepository.findById(request.bookingId())
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Booking not found"));
@@ -59,48 +64,99 @@ public class FoodOrderService {
                     "Food orders are allowed only for confirmed bookings");
         }
 
+        // Validate serving date
         if (request.servingDate().isBefore(booking.getCheckIn()) ||
                 !request.servingDate().isBefore(booking.getCheckOut())) {
             throw new IllegalArgumentException(
                     "Serving date must fall within your booking period");
         }
 
-        HotelFoodMenu menu = hotelFoodMenuRepository
-                .findById(request.hotelFoodMenuId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Hotel food menu item not found"));
+        Hotel bookingHotel = booking.getRoom().getHotel();
+        Long bookingHotelId = bookingHotel.getId();
 
-        if (!menu.isAvailable() ||
-                !menu.getFoodItem().isAvailable() ||
-                !menu.getFoodItem().getCategory().isActive()) {
+        // Validate cart
+        if (request.items() == null || request.items().isEmpty()) {
             throw new IllegalArgumentException(
-                    "This food item is currently unavailable");
+                    "At least one food item is required");
         }
 
-        Long bookingHotelId = booking.getRoom().getHotel().getId();
-        Long menuHotelId = menu.getHotel().getId();
-
-        if (!bookingHotelId.equals(menuHotelId)) {
-            throw new IllegalArgumentException(
-                    "Food item does not belong to your booked hotel");
-        }
-
-        BigDecimal unitPrice = menu.getSellingPrice();
-
-        BigDecimal totalPrice = unitPrice.multiply(
-                BigDecimal.valueOf(request.quantity())
-        );
+        Set<Long> processedMenuIds = new HashSet<>();
 
         FoodOrder order = new FoodOrder();
         order.setBooking(booking);
-        order.setHotelFoodMenu(menu);
-        order.setQuantity(request.quantity());
+        order.setHotel(bookingHotel);
         order.setServingDate(request.servingDate());
         order.setSpecialInstructions(request.specialInstructions());
-        order.setUnitPrice(unitPrice);
-        order.setTotalPrice(totalPrice);
         order.setStatus(FoodOrderStatus.PENDING);
 
+        BigDecimal grandTotal = BigDecimal.ZERO;
+
+        // Validate and add every food item
+        for (FoodOrderRequest.FoodOrderItemRequest itemRequest
+                : request.items()) {
+
+            if (itemRequest.hotelFoodMenuId() == null ||
+                    itemRequest.quantity() == null ||
+                    itemRequest.quantity() < 1) {
+                throw new IllegalArgumentException(
+                        "Each food item must have a valid menu ID and quantity");
+            }
+
+            Long menuId = itemRequest.hotelFoodMenuId();
+
+            // Prevent duplicate menu entries in one order
+            if (!processedMenuIds.add(menuId)) {
+                throw new IllegalArgumentException(
+                        "Duplicate food items are not allowed. " +
+                        "Please combine their quantities.");
+            }
+
+            HotelFoodMenu menu = hotelFoodMenuRepository
+                    .findById(menuId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Hotel food menu item not found: " + menuId));
+
+            // Check menu and food availability
+            if (!menu.isAvailable() ||
+                    !menu.getFoodItem().isAvailable() ||
+                    !menu.getFoodItem().getCategory().isActive()) {
+                throw new IllegalArgumentException(
+                        "Food item is currently unavailable: " +
+                        menu.getFoodItem().getName());
+            }
+
+            // Ensure every item belongs to the booked hotel
+            Long menuHotelId = menu.getHotel().getId();
+
+            if (!bookingHotelId.equals(menuHotelId)) {
+                throw new IllegalArgumentException(
+                        "Food item does not belong to your booked hotel: " +
+                        menu.getFoodItem().getName());
+            }
+
+            // Always calculate prices using the database price
+            BigDecimal unitPrice = menu.getSellingPrice();
+
+            BigDecimal itemTotal = unitPrice.multiply(
+                    BigDecimal.valueOf(itemRequest.quantity())
+            );
+
+            FoodOrderItem orderItem = new FoodOrderItem();
+            orderItem.setHotelFoodMenu(menu);
+            orderItem.setQuantity(itemRequest.quantity());
+            orderItem.setUnitPrice(unitPrice);
+            orderItem.setTotalPrice(itemTotal);
+
+            order.addItem(orderItem);
+
+            grandTotal = grandTotal.add(itemTotal);
+        }
+
+        // Set the combined order total
+        order.setTotalPrice(grandTotal);
+
+        // Parent and child records are saved together through cascade
         FoodOrder savedOrder = foodOrderRepository.save(order);
 
         return mapToResponse(savedOrder);
@@ -128,20 +184,60 @@ public class FoodOrderService {
 
     private FoodOrderResponse mapToResponse(FoodOrder order) {
 
-        Hotel hotel = order.getHotelFoodMenu().getHotel();
-        FoodItem foodItem = order.getHotelFoodMenu().getFoodItem();
+        // The booking determines the hotel's identity.
+        Hotel hotel = order.getBooking().getRoom().getHotel();
+
+        List<FoodOrderResponse.FoodOrderItemResponse> itemResponses =
+                new ArrayList<>();
+
+        // Map new multi-item orders
+        if (order.getItems() != null && !order.getItems().isEmpty()) {
+
+            for (FoodOrderItem item : order.getItems()) {
+
+                HotelFoodMenu menu = item.getHotelFoodMenu();
+                FoodItem foodItem = menu.getFoodItem();
+
+                itemResponses.add(
+                        new FoodOrderResponse.FoodOrderItemResponse(
+                                item.getId(),
+                                menu.getId(),
+                                foodItem.getId(),
+                                foodItem.getName(),
+                                item.getQuantity(),
+                                item.getUnitPrice(),
+                                item.getTotalPrice()
+                        )
+                );
+            }
+
+        } else if (order.getHotelFoodMenu() != null) {
+
+            // Backward compatibility for historical single-item orders
+            HotelFoodMenu menu = order.getHotelFoodMenu();
+            FoodItem foodItem = menu.getFoodItem();
+
+            itemResponses.add(
+                    new FoodOrderResponse.FoodOrderItemResponse(
+                            null,
+                            menu.getId(),
+                            foodItem.getId(),
+                            foodItem.getName(),
+                            order.getQuantity(),
+                            order.getUnitPrice(),
+                            order.getTotalPrice()
+                    )
+            );
+        }
 
         return new FoodOrderResponse(
                 order.getId(),
                 order.getBooking().getId(),
                 hotel.getId(),
                 hotel.getName(),
-                foodItem.getId(),
-                foodItem.getName(),
-                order.getQuantity(),
+                itemResponses,
                 order.getServingDate(),
                 order.getSpecialInstructions(),
-                order.getUnitPrice(),
                 order.getTotalPrice(),
                 order.getStatus(),
                 order.getCreatedAt()
@@ -149,7 +245,7 @@ public class FoodOrderService {
     }
 
     @Transactional(readOnly = true)
-    public java.util.List<FoodOrderResponse> getMyOrders(
+    public List<FoodOrderResponse> getMyOrders(
             Authentication authentication) {
 
         Customer customer = getAuthenticatedCustomer(authentication);
@@ -163,16 +259,14 @@ public class FoodOrderService {
                 .toList();
     }
 
-
     @Transactional(readOnly = true)
-    public java.util.List<FoodOrderResponse> getHotelOrders(
+    public List<FoodOrderResponse> getHotelOrders(
             Authentication authentication) {
 
         if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
             throw new IllegalArgumentException("Invalid authentication");
         }
 
-        // Get hotel ID from the authenticated owner's JWT
         Number hotelId = jwtAuth.getToken().getClaim("hotelId");
 
         if (hotelId == null) {
@@ -180,14 +274,12 @@ public class FoodOrderService {
                     "Hotel ID missing from authentication token");
         }
 
-        // Fetch only orders belonging to this hotel
         return foodOrderRepository
                 .findByHotelIdOrderByCreatedAtDesc(hotelId.longValue())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
-
 
     @Transactional
     public FoodOrderResponse updateOrderStatus(
@@ -199,7 +291,6 @@ public class FoodOrderService {
             throw new IllegalArgumentException("Invalid authentication");
         }
 
-        // Get the authenticated owner's hotel ID
         Number hotelIdClaim = jwtAuth.getToken().getClaim("hotelId");
 
         if (hotelIdClaim == null) {
@@ -209,13 +300,13 @@ public class FoodOrderService {
 
         Long hotelId = hotelIdClaim.longValue();
 
-        // Find the requested food order
         FoodOrder order = foodOrderRepository.findById(orderId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Food order not found"));
 
-        // Verify that the order belongs to this owner's hotel
-        Long orderHotelId = order.getHotelFoodMenu()
+        // Verify ownership using the booking's hotel
+        Long orderHotelId = order.getBooking()
+                .getRoom()
                 .getHotel()
                 .getId();
 
@@ -230,7 +321,7 @@ public class FoodOrderService {
         boolean validTransition =
                 (currentStatus == FoodOrderStatus.PENDING &&
                         (newStatus == FoodOrderStatus.ACCEPTED ||
-                        newStatus == FoodOrderStatus.REJECTED))
+                                newStatus == FoodOrderStatus.REJECTED))
                 ||
                 (currentStatus == FoodOrderStatus.ACCEPTED &&
                         newStatus == FoodOrderStatus.SERVED);
@@ -238,7 +329,7 @@ public class FoodOrderService {
         if (!validTransition) {
             throw new IllegalArgumentException(
                     "Invalid order status transition: " +
-                    currentStatus + " to " + newStatus);
+                            currentStatus + " to " + newStatus);
         }
 
         order.setStatus(newStatus);
@@ -247,6 +338,4 @@ public class FoodOrderService {
 
         return mapToResponse(updatedOrder);
     }
-
-
 }

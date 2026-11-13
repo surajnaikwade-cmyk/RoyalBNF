@@ -43,7 +43,12 @@ function Login() {
         })
       );
 
-      navigate('/');
+      const returnTo = location.state?.returnTo;
+      navigate(
+        typeof returnTo === 'string' && returnTo.startsWith('/') && !returnTo.startsWith('//')
+          ? returnTo
+          : '/'
+      );
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
